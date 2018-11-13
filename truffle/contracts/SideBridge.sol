@@ -4,87 +4,6 @@ import './Helpers.sol';
 import './MessageSigning.sol';
 
 contract SideBridge {
-    // following is the part of SideBridge that implements an ERC20 token.
-    // ERC20 spec: https://github.com/ethereum/EIPs/blob/master/EIPS/eip-20.md
-
-    uint256 public totalSupply;
-
-    string public name = "SideBridge";
-    // BETH = bridged ether
-    string public symbol = "BETH";
-    // 1-1 mapping of ether to tokens
-    uint8 public decimals = 18;
-
-    /// maps addresses to their token balances
-    mapping (address => uint256) public balances;
-
-    // owner of account approves the transfer of an amount by another account
-    mapping(address => mapping (address => uint256)) allowed;
-
-    /// Event created on money transfer
-    event Transfer(address indexed from, address indexed to, uint256 tokens);
-
-    // returns the ERC20 token balance of the given address
-    function balanceOf(address tokenOwner) public view returns (uint256) {
-        return balances[tokenOwner];
-    }
-
-    /// Transfer `value` to `recipient` on this `side` chain.
-    ///
-    /// does not affect `main` chain. does not do a relay.
-    /// as specificed in ERC20 this doesn't fail if tokens == 0.
-    function transfer(address recipient, uint256 tokens) public returns (bool) {
-        require(balances[msg.sender] >= tokens);
-        // fails if there is an overflow
-        require(balances[recipient] + tokens >= balances[recipient]);
-
-        balances[msg.sender] -= tokens;
-        balances[recipient] += tokens;
-        Transfer(msg.sender, recipient, tokens);
-        return true;
-    }
-
-    // following is the part of SideBridge that is concerned
-    // with the part of the ERC20 standard responsible for giving others spending rights
-    // and spending others tokens
-
-    // created when `approve` is executed to mark that
-    // `tokenOwner` has approved `spender` to spend `tokens` of his tokens
-    event Approval(address indexed tokenOwner, address indexed spender, uint256 tokens);
-
-    // allow `spender` to withdraw from your account, multiple times, up to the `tokens` amount.
-    // calling this function repeatedly overwrites the current allowance.
-    function approve(address spender, uint256 tokens) public returns (bool) {
-        allowed[msg.sender][spender] = tokens;
-        Approval(msg.sender, spender, tokens);
-        return true;
-    }
-
-    // returns how much `spender` is allowed to spend of `owner`s tokens
-    function allowance(address owner, address spender) public view returns (uint256) {
-        return allowed[owner][spender];
-    }
-
-    function transferFrom(address from, address to, uint tokens) public returns (bool) {
-        // `from` has enough tokens
-        require(balances[from] >= tokens);
-        // `sender` is allowed to move `tokens` from `from`
-        require(allowed[from][msg.sender] >= tokens);
-        // fails if there is an overflow
-        require(balances[to] + tokens >= balances[to]);
-
-        balances[to] += tokens;
-        balances[from] -= tokens;
-        allowed[from][msg.sender] -= tokens;
-
-        Transfer(from, to, tokens);
-        return true;
-    }
-
-    // following is the part of SideBridge that is
-    // no longer part of ERC20 and is concerned with
-    // with moving tokens from and to MainBridge
-
     struct SignaturesCollection {
         /// Signed message.
         bytes message;
@@ -98,8 +17,6 @@ contract SideBridge {
     ///
     /// Must be less than number of authorities.
     uint256 public requiredSignatures;
-
-    uint256 public estimatedGasCostOfWithdraw;
 
     /// Contract authorities.
     address[] public authorities;
@@ -126,15 +43,13 @@ contract SideBridge {
 
     function SideBridge(
         uint256 _requiredSignatures,
-        address[] _authorities,
-        uint256 _estimatedGasCostOfWithdraw
-    ) public
+        address[] _authorities
+    ) public payable
     {
         require(_requiredSignatures != 0);
         require(_requiredSignatures <= _authorities.length);
         requiredSignatures = _requiredSignatures;
         authorities = _authorities;
-        estimatedGasCostOfWithdraw = _estimatedGasCostOfWithdraw;
     }
 
     // Called by the bridge node processes on startup
@@ -172,41 +87,28 @@ contract SideBridge {
             return;
         }
 
-        balances[recipient] += value;
-        // mints tokens
-        totalSupply += value;
-        // ERC20 specifies: a token contract which creates new tokens
-        // SHOULD trigger a Transfer event with the _from address
-        // set to 0x0 when tokens are created.
-        Transfer(0x0, recipient, value);
+        recipient.transfer(value);
         Deposit(recipient, value, transactionHash);
     }
 
-    /// Transfer `value` from `msg.sender`s local balance (on `side` chain) to `recipient` on `main` chain.
+    // Shortcut to allow users to transfer their sidechain ETH back to the main chain
+    function () public payable {
+        transferToMainViaRelay(msg.sender);
+    }
+
+    /// Transfer ETH from `msg.sender` (on `side` chain) to `recipient` on `main` chain.
     ///
-    /// immediately decreases `msg.sender`s local balance.
     /// emits a `Withdraw` event which will be picked up by the bridge authorities.
     /// bridge authorities will then sign off (by calling `submitSignature`) on a message containing `value`,
     /// `recipient` and the `hash` of the transaction on `side` containing the `Withdraw` event.
     /// once `requiredSignatures` are collected a `CollectedSignatures` event will be emitted.
     /// an authority will pick up `CollectedSignatures` an call `MainBridge.withdraw`
     /// which transfers `value - relayCost` to `recipient` completing the transfer.
-    function transferToMainViaRelay(address recipient, uint256 value, uint256 mainGasPrice) public {
-        require(balances[msg.sender] >= value);
+    function transferToMainViaRelay(address recipient) public payable {
         // don't allow 0 value transfers to main
-        require(value > 0);
+        require(msg.value > 0);
 
-        uint256 estimatedWeiCostOfWithdraw = estimatedGasCostOfWithdraw * mainGasPrice;
-        require(value > estimatedWeiCostOfWithdraw);
-
-        balances[msg.sender] -= value;
-        // burns tokens
-        totalSupply -= value;
-        // in line with the transfer event from `0x0` on token creation
-        // recommended by ERC20 (see implementation of `deposit` above)
-        // we trigger a Transfer event to `0x0` on token destruction
-        Transfer(msg.sender, 0x0, value);
-        Withdraw(recipient, value, mainGasPrice);
+        Withdraw(recipient, msg.value, 0);
     }
 
     /// Should be used as sync tool

@@ -119,3 +119,9 @@ function eventToLogs(event) {
   });
 }
 module.exports.eventToLogs = eventToLogs;
+
+function randomAddress() {
+  const random8Bytes = Math.floor(0x1000000000000000 * Math.random()).toString(16);
+  return `0x${random8Bytes.padStart(40, '0')}`;
+}
+module.exports.randomAddress = randomAddress;
