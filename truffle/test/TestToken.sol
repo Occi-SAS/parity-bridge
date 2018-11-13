@@ -14,15 +14,27 @@ contract TestToken {
 
     mapping(address => uint256) balances;
 
+    bool disabled;
+
     constructor() {
         balances[msg.sender] = 1000 ether;
     }
 
-    function transfer(address to, uint256 value) external {
-        emit Transfer(msg.sender, to, value);
+    function disable() external {
+        disabled = true;
     }
 
-    function callDeposit(address bridge, address recipient, uint256 value) external {
+    modifier isEnabled() {
+        require(!disabled);
+        _;
+    }
+
+    function transfer(address to, uint256 value) external isEnabled returns (bool) {
+        emit Transfer(msg.sender, to, value);
+        return true;
+    }
+
+    function callDeposit(address bridge, address recipient, uint256 value) external isEnabled {
         IBridge(bridge).deposit(recipient, value);
     }
 }

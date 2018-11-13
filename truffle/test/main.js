@@ -102,12 +102,6 @@ contract('MainBridge', function(accounts) {
     }).then(function(instance) {
       mainBridge = instance;
 
-      // "charge" MainBridge so we can withdraw later
-      return mainBridge.sendTransaction({
-        value: value,
-        from: userAccount
-      })
-    }).then(function(result) {
       return helpers.sign(authorities[0], message);
     }).then(function(result) {
       signature = result;
@@ -155,15 +149,9 @@ contract('MainBridge', function(accounts) {
     return newMainBridge({
       requiredSignatures: 1,
       authorities: authorities,
-      estimatedGasCostOfWithdraw: 0,
     }).then(function(instance) {
       mainBridge = instance;
       // "charge" MainBridge so we can withdraw later
-      return mainBridge.sendTransaction({
-        value: value.times(2),
-        from: userAccount
-      })
-    }).then(function(result) {
       return helpers.sign(authorities[0], message1);
     }).then(function(signature) {
       var vrs = helpers.signatureToVRS(signature);
@@ -213,15 +201,9 @@ contract('MainBridge', function(accounts) {
     return newMainBridge({
       requiredSignatures: 1,
       authorities: authorities,
-      estimatedGasCostOfWithdraw: 0,
     }).then(function(instance) {
       mainBridge = instance;
       // "charge" MainBridge so we can withdraw later
-      return mainBridge.sendTransaction({
-        value: value.times(2),
-        from: userAccount
-      })
-    }).then(function(result) {
       return helpers.sign(authorities[0], message1);
     }).then(function(signature) {
       var vrs = helpers.signatureToVRS(signature);
@@ -266,9 +248,12 @@ contract('MainBridge', function(accounts) {
     return newMainBridge({
       requiredSignatures: 1,
       authorities: authorities,
-      estimatedGasCostOfWithdraw: 0,
-    }).then(function(instance) {
+    }).then(async function(instance) {
       mainBridge = instance;
+
+      const token = await TestToken.at(await mainBridge.token());
+      await token.disable();
+
       return helpers.sign(authorities[0], message);
     }).then(function(result) {
       signature = result;
@@ -277,7 +262,7 @@ contract('MainBridge', function(accounts) {
         [vrs.v],
         [vrs.r],
         [vrs.s],
-        message.substr(0, 83),
+        message,
         {from: authorities[0], gasPrice: mainGasPrice}
       ).then(function() {
         assert(false, "should fail");
@@ -300,16 +285,9 @@ contract('MainBridge', function(accounts) {
     return newMainBridge({
       requiredSignatures: 1,
       authorities: authorities,
-      estimatedGasCostOfWithdraw: 0,
     }).then(function(instance) {
       mainBridge = instance;
 
-      // "charge" MainBridge so we can withdraw later
-      return mainBridge.sendTransaction({
-        value: value,
-        from: userAccount
-      })
-    }).then(function(result) {
       return helpers.sign(authorities[0], message);
     }).then(function(result) {
       signature = result;
@@ -341,16 +319,9 @@ contract('MainBridge', function(accounts) {
     return newMainBridge({
       requiredSignatures: 2,
       authorities: authorities,
-      estimatedGasCostOfWithdraw: 0,
     }).then(function(instance) {
       mainBridge = instance;
 
-      // "charge" MainBridge so we can withdraw later
-      return mainBridge.sendTransaction({
-        value: value,
-        from: userAccount
-      })
-    }).then(function(result) {
       return helpers.sign(authorities[0], message);
     }).then(function(result) {
       signature = result;
@@ -382,16 +353,9 @@ contract('MainBridge', function(accounts) {
     return newMainBridge({
       requiredSignatures: 2,
       authorities: authorities,
-      estimatedGasCostOfWithdraw: 0,
     }).then(function(instance) {
       mainBridge = instance;
 
-      // "charge" MainBridge so we can withdraw later
-      return mainBridge.sendTransaction({
-        value: value,
-        from: userAccount
-      })
-    }).then(function(result) {
       return helpers.sign(authorities[0], message);
     }).then(function(result) {
       signature = result;
