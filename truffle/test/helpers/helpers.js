@@ -112,3 +112,10 @@ module.exports.range = range;
 function ignoreExpectedError() {
 }
 module.exports.ignoreExpectedError = ignoreExpectedError;
+
+function eventToLogs(event) {
+  return new Promise((resolve, reject) => {
+    event.get((err, logs) => err ? reject(err) : resolve(logs));
+  });
+}
+module.exports.eventToLogs = eventToLogs;
