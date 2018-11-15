@@ -1,6 +1,6 @@
 pragma solidity ^0.4.17;
 
-import '../contracts/MessageSigning.sol';
+import '../../contracts/MessageSigning.sol';
 
 
 /// Library used only to test MessageSigning library via rpc calls

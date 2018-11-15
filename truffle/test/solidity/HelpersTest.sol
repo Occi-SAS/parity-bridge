@@ -1,6 +1,6 @@
 pragma solidity ^0.4.17;
 
-import '../contracts/Helpers.sol';
+import '../../contracts/Helpers.sol';
 
 /// Library used only to test Helpers library via rpc calls
 library HelpersTest {

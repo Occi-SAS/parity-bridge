@@ -1,6 +1,6 @@
 pragma solidity ^0.4.17;
 
-import '../contracts/Message.sol';
+import '../../contracts/Message.sol';
 
 /// Library used only to test Message library via rpc calls
 library MessageTest {
