@@ -123,13 +123,13 @@ contract SideBridge {
     /// side transaction hash (bytes32) // to avoid transaction duplication
     function submitSignature(bytes signature, bytes message) public onlyAuthority() {
         // ensure that `signature` is really `message` signed by `msg.sender`
-        require(msg.sender == MessageSigning.recoverAddressFromSignedMessage(signature, message));
+        require(msg.sender == MessageSigning.recoverAddressFromSignedMessage(signature, message), 'Invalid message signature');
 
-        require(message.length == 116);
+        require(message.length == 116, 'Message is wrong size');
         var hash = keccak256(message);
 
         // each authority can only provide one signature per message
-        require(!Helpers.addressArrayContains(signatures[hash].authorities, msg.sender));
+        require(!Helpers.addressArrayContains(signatures[hash].authorities, msg.sender), 'Authority has already signed message');
         signatures[hash].message = message;
         signatures[hash].authorities.push(msg.sender);
         signatures[hash].signatures.push(signature);
