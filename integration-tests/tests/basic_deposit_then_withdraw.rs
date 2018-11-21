@@ -27,6 +27,8 @@ extern crate tempdir;
 extern crate tokio_core;
 extern crate web3;
 
+use std::fs;
+use std::io::Read;
 use std::path::Path;
 use std::process::Command;
 use std::thread;
@@ -36,6 +38,7 @@ use tokio_core::reactor::Core;
 
 use bridge::helpers::AsyncCall;
 use ethereum_types::{Address, U256};
+use web3::confirm;
 use web3::api::Namespace;
 use web3::transports::http::Http;
 
@@ -204,6 +207,57 @@ fn test_basic_deposit_then_withdraw() {
     // give nodes time to start up
     thread::sleep(Duration::from_millis(10000));
 
+
+    let mut event_loop = Core::new().unwrap();
+
+    // connect to main
+    let main_transport = Http::with_event_loop(
+        "http://localhost:8550",
+        &event_loop.handle(),
+        MAX_PARALLEL_REQUESTS,
+    ).expect("failed to connect to main at http://localhost:8550");
+    let main_eth = web3::api::Eth::new(main_transport.clone());
+
+    // connect to side
+    let side_transport = Http::with_event_loop(
+        "http://localhost:8551",
+        &event_loop.handle(),
+        MAX_PARALLEL_REQUESTS,
+    ).expect("failed to connect to side at http://localhost:8551");
+    let side_eth = web3::api::Eth::new(side_transport.clone());
+
+    println!("Compiling TestToken");
+    Command::new("solc")
+        .arg("--bin")
+        .arg("../truffle/test/solidity/TestToken.sol")
+        .arg("-o")
+        .arg(format!("{}{}", TMP_PATH, "/TestToken"))
+        .arg("--overwrite")
+        .status()
+        .expect("failed to spawn bridge process");
+
+    let mut file = fs::File::open(format!("{}{}", TMP_PATH, "/TestToken/TestToken.bin"))
+        .expect("Unable to open the file");
+    let mut token_bytecode = String::new();
+    file.read_to_string(&mut token_bytecode).expect("Unable to read the file");
+
+    let tx = web3::types::TransactionRequest {
+        from: authority_address.into(),
+        to: None,
+        gas: None,
+        gas_price: None,
+        value: None,
+        data: Some(token_bytecode.into()),
+        nonce: None,
+        condition: None,
+    };
+    let receipt = event_loop
+        .run(confirm::send_transaction_with_confirmation(&main_transport, tx, Duration::new(0, 100), 0))
+        .unwrap();
+    println!("Address {:?}", receipt.contract_address);
+    let token_address = receipt.contract_address.unwrap();
+
+
     // deploy bridge contracts
 
     println!("\ndeploying contracts\n");
@@ -235,23 +289,6 @@ fn test_basic_deposit_then_withdraw() {
 
     let main_contract_address = "0xebd3944af37ccc6b67ff61239ac4fef229c8f69f";
     let side_contract_address = "0xebd3944af37ccc6b67ff61239ac4fef229c8f69f";
-
-    let mut event_loop = Core::new().unwrap();
-
-    // connect to main
-    let main_transport = Http::with_event_loop(
-        "http://localhost:8550",
-        &event_loop.handle(),
-        MAX_PARALLEL_REQUESTS,
-    ).expect("failed to connect to main at http://localhost:8550");
-    let main_eth = web3::api::Eth::new(main_transport.clone());
-
-    // connect to side
-    let side_transport = Http::with_event_loop(
-        "http://localhost:8551",
-        &event_loop.handle(),
-        MAX_PARALLEL_REQUESTS,
-    ).expect("failed to connect to side at http://localhost:8551");
 
     let (payload, decoder) = bridge_contracts::main::functions::estimated_gas_cost_of_withdraw::call();
     let response = event_loop
