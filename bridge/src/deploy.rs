@@ -67,11 +67,9 @@ impl<T: Transport + Clone> Future for DeployMain<T> {
                 DeployState::NotDeployed => {
                     let data = contracts::main::constructor(
                         self.config.main.contract.bin.clone().0,
+                        self.config.token.clone(),
                         self.config.authorities.required_signatures,
                         self.config.authorities.accounts.clone(),
-                        self.config.estimated_gas_cost_of_withdraw,
-                        self.config.max_total_main_contract_balance,
-                        self.config.max_single_deposit_value,
                     );
 
                     let tx_request = TransactionRequest {
@@ -161,7 +159,6 @@ impl<T: Transport + Clone> Future for DeploySide<T> {
                         self.config.side.contract.bin.clone().0,
                         self.config.authorities.required_signatures,
                         self.config.authorities.accounts.clone(),
-                        self.config.estimated_gas_cost_of_withdraw,
                     );
 
                     let tx_request = TransactionRequest {

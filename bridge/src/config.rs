@@ -35,13 +35,12 @@ const DEFAULT_CONFIRMATIONS: u32 = 12;
 #[derive(Debug, PartialEq, Clone)]
 pub struct Config {
     pub address: Address,
+    pub token: Address,
     pub main: NodeConfig,
     pub side: NodeConfig,
     pub authorities: Authorities,
     pub txs: Transactions,
     pub estimated_gas_cost_of_withdraw: U256,
-    pub max_total_main_contract_balance: U256,
-    pub max_single_deposit_value: U256,
 }
 
 impl Config {
@@ -60,6 +59,7 @@ impl Config {
     fn from_load_struct(config: load::Config) -> Result<Config, Error> {
         let result = Config {
             address: config.address,
+            token: config.token,
             main: NodeConfig::from_load_struct(config.main)?,
             side: NodeConfig::from_load_struct(config.side)?,
             authorities: Authorities {
@@ -71,8 +71,6 @@ impl Config {
                 .map(Transactions::from_load_struct)
                 .unwrap_or_default(),
             estimated_gas_cost_of_withdraw: config.estimated_gas_cost_of_withdraw,
-            max_total_main_contract_balance: config.max_total_main_contract_balance,
-            max_single_deposit_value: config.max_single_deposit_value,
         };
 
         Ok(result)
@@ -184,16 +182,13 @@ mod load {
     #[serde(deny_unknown_fields)]
     pub struct Config {
         pub address: Address,
+        pub token: Address,
         pub main: NodeConfig,
         pub side: NodeConfig,
         pub authorities: Authorities,
         pub transactions: Option<Transactions>,
         #[serde(deserialize_with = "deserialize_u256")]
         pub estimated_gas_cost_of_withdraw: U256,
-        #[serde(deserialize_with = "deserialize_u256")]
-        pub max_total_main_contract_balance: U256,
-        #[serde(deserialize_with = "deserialize_u256")]
-        pub max_single_deposit_value: U256,
     }
 
     #[derive(Deserialize)]
@@ -251,8 +246,7 @@ mod tests {
         let toml = r#"
 address = "0x1B68Cb0B50181FC4006Ce572cF346e596E51818b"
 estimated_gas_cost_of_withdraw = "100000"
-max_total_main_contract_balance = "10000000000000000000"
-max_single_deposit_value = "1000000000000000000"
+token = "0x1234567890181FC4006Ce572cF346e596E51818b"
 
 [main]
 http = "http://localhost:8545"
@@ -282,6 +276,7 @@ main_deploy = { gas = "20", gas_price = "0" }
 
         let mut expected = Config {
             address: "1B68Cb0B50181FC4006Ce572cF346e596E51818b".into(),
+            token: "1234567890181FC4006Ce572cF346e596E51818b".into(),
             txs: Transactions::default(),
             main: NodeConfig {
                 http: "http://localhost:8545".into(),
@@ -316,8 +311,6 @@ main_deploy = { gas = "20", gas_price = "0" }
                 required_signatures: 2,
             },
             estimated_gas_cost_of_withdraw: U256::from_dec_str("100000").unwrap(),
-            max_total_main_contract_balance: U256::from_dec_str("10000000000000000000").unwrap(),
-            max_single_deposit_value: U256::from_dec_str("1000000000000000000").unwrap(),
         };
 
         expected.txs.main_deploy = TransactionConfig {
@@ -334,8 +327,7 @@ main_deploy = { gas = "20", gas_price = "0" }
         let toml = r#"
 address = "0x0000000000000000000000000000000000000001"
 estimated_gas_cost_of_withdraw = "200000000"
-max_total_main_contract_balance = "10000000000000000000"
-max_single_deposit_value = "1000000000000000000"
+token = "0x1234567890181FC4006Ce572cF346e596E51818b"
 
 [main]
 http = ""
@@ -359,6 +351,7 @@ required_signatures = 2
 "#;
         let expected = Config {
             address: "0000000000000000000000000000000000000001".into(),
+            token: "1234567890181FC4006Ce572cF346e596E51818b".into(),
             txs: Transactions::default(),
             main: NodeConfig {
                 http: "".into(),
@@ -393,8 +386,6 @@ required_signatures = 2
                 required_signatures: 2,
             },
             estimated_gas_cost_of_withdraw: U256::from_dec_str("200000000").unwrap(),
-            max_total_main_contract_balance: U256::from_dec_str("10000000000000000000").unwrap(),
-            max_single_deposit_value: U256::from_dec_str("1000000000000000000").unwrap(),
         };
 
         let config = Config::load_from_str(toml).unwrap();
