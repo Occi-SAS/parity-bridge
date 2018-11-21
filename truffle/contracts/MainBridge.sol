@@ -1,21 +1,20 @@
 pragma solidity ^0.4.17;
 
 
+import "./Authorities.sol";
 import "./Helpers.sol";
 import "./IBridge.sol";
 import "./IERC20.sol";
 import "./Message.sol";
 
 
-contract MainBridge is IBridge {
+contract MainBridge is IBridge, Authorities {
     address public token;
 
     /// Number of authorities signatures required to withdraw the money.
     ///
     /// Must be lesser than number of authorities.
     uint256 public requiredSignatures;
-
-    address[] public authorities;
 
     /// Used side transaction hashes.
     mapping (bytes32 => bool) public withdraws;
@@ -31,13 +30,12 @@ contract MainBridge is IBridge {
         address tokenParam,
         uint256 requiredSignaturesParam,
         address[] authoritiesParam
-    ) public
+    ) public Authorities(authoritiesParam)
     {
         require(requiredSignaturesParam != 0);
         require(requiredSignaturesParam <= authoritiesParam.length);
         token = tokenParam;
         requiredSignatures = requiredSignaturesParam;
-        authorities = authoritiesParam;
     }
 
     /// Called by the bridge node processes on startup

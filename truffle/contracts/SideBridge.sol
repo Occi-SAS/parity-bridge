@@ -1,9 +1,10 @@
 pragma solidity ^0.4.17;
 
+import "./Authorities.sol";
 import './Helpers.sol';
 import './MessageSigning.sol';
 
-contract SideBridge {
+contract SideBridge is Authorities {
     struct SignaturesCollection {
         /// Signed message.
         bytes message;
@@ -17,9 +18,6 @@ contract SideBridge {
     ///
     /// Must be less than number of authorities.
     uint256 public requiredSignatures;
-
-    /// Contract authorities.
-    address[] public authorities;
 
     /// Pending deposits and authorities who confirmed them
     mapping (bytes32 => address[]) deposits;
@@ -44,12 +42,11 @@ contract SideBridge {
     function SideBridge(
         uint256 _requiredSignatures,
         address[] _authorities
-    ) public payable
+    ) public payable Authorities(_authorities)
     {
         require(_requiredSignatures != 0);
         require(_requiredSignatures <= _authorities.length);
         requiredSignatures = _requiredSignatures;
-        authorities = _authorities;
     }
 
     // Called by the bridge node processes on startup
@@ -59,12 +56,6 @@ contract SideBridge {
     // very unhelpful errors encountered otherwise.
     function isSideBridgeContract() public pure returns (bool) {
         return true;
-    }
-
-    /// require that sender is an authority
-    modifier onlyAuthority() {
-        require(Helpers.addressArrayContains(authorities, msg.sender));
-        _;
     }
 
     /// Used to deposit money to the contract.
