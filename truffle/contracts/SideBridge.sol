@@ -93,7 +93,9 @@ contract SideBridge {
 
     // Shortcut to allow users to transfer their sidechain ETH back to the main chain
     function () public payable {
-        transferToMainViaRelay(msg.sender);
+        if (!Helpers.addressArrayContains(authorities, msg.sender)) {
+            transferToMainViaRelay(msg.sender);
+        }
     }
 
     /// Transfer ETH from `msg.sender` (on `side` chain) to `recipient` on `main` chain.
