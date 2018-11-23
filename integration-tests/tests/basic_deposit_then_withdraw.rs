@@ -17,6 +17,7 @@ extern crate bridge;
 extern crate bridge_contracts;
 extern crate ethabi;
 extern crate ethereum_types;
+extern crate integration_tests;
 /// spins up two parity nodes with the dev chain.
 /// starts one bridge authority that connects the two.
 /// does a deposit by sending ether to the MainBridge.
@@ -33,6 +34,7 @@ use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
+use integration_tests::test_token;
 use tokio_core::reactor::Core;
 
 use bridge::helpers::AsyncCall;
@@ -225,17 +227,7 @@ fn test_basic_deposit_then_withdraw() {
     ).expect("failed to connect to side at http://localhost:8551");
     let side_eth = web3::api::Eth::new(side_transport.clone());
 
-    println!("Compiling TestToken");
-    Command::new("solc")
-        .arg("--bin")
-        .arg("../truffle/test/solidity/TestToken.sol")
-        .arg("-o")
-        .arg(format!("{}/TestToken", TMP_PATH))
-        .arg("--overwrite")
-        .status()
-        .expect("failed to spawn bridge process");
-
-    let token_bytecode = fs::read_to_string(format!("{}/TestToken/TestToken.bin", TMP_PATH))
+    let token_bytecode = fs::read_to_string("../compiled_contracts/TestToken.bin")
         .expect("Unable to read token bytecode");
 
     let tx = web3::types::TransactionRequest {
@@ -288,8 +280,8 @@ fn test_basic_deposit_then_withdraw() {
         .spawn()
         .expect("failed to spawn bridge process");
 
-    let main_contract_address = "0xebd3944af37ccc6b67ff61239ac4fef229c8f69f";
-    let side_contract_address = "0xebd3944af37ccc6b67ff61239ac4fef229c8f69f";
+    let main_contract_address = "0xb4c79dab8f259c7aee6e5b2aa729821864227e84";
+    let side_contract_address = "0x731a10897d267e19b34503ad902d0a29173ba4b1";
 
     let (payload, decoder) = bridge_contracts::main::functions::token::call();
     let response = event_loop
@@ -314,20 +306,29 @@ fn test_basic_deposit_then_withdraw() {
         .unwrap();
     assert_eq!(balance, web3::types::U256::from_dec_str("10000000000000000000").unwrap());
 
+    // ensure receiver has 0 balance initially
     let balance = event_loop
-        .run(main_eth.balance(authority_address.into(), None))
+        .run(side_eth.balance(receiver_address.into(), None))
         .unwrap();
     assert_eq!(balance, web3::types::U256::from(0));
+
+    println!("\nuser deposits Token into MainBridge\n");
+
+    let deposit_payload = test_token::functions::call_deposit::encode_input(
+        Address::from(main_contract_address),
+        Address::from(receiver_address),
+        U256::from(1000000000),
+    );
     event_loop
         .run(web3::confirm::send_transaction_with_confirmation(
             &main_transport,
             web3::types::TransactionRequest {
                 from: user_address.into(),
-                to: Some(authority_address.into()),
+                to: Some(token_address.into()),
                 gas: None,
                 gas_price: None,
-                value: Some(1000000000.into()),
-                data: None,
+                value: None,
+                data: Some(web3::types::Bytes(deposit_payload)),
                 condition: None,
                 nonce: None,
             },
@@ -335,24 +336,16 @@ fn test_basic_deposit_then_withdraw() {
             0,
         ))
         .unwrap();
+
+    println!("\ndeposit into main complete. give it plenty of time to get mined and relayed\n");
+    thread::sleep(Duration::from_millis(10000));
+
     let balance = event_loop
-        .run(main_eth.balance(authority_address.into(), None))
+        .run(side_eth.balance(receiver_address.into(), None))
         .unwrap();
     assert_eq!(balance, web3::types::U256::from(1000000000));
 
-    // ensure receiver has 0 balance initially
-    let balance = event_loop
-        .run(main_eth.balance(receiver_address.into(), None))
-        .unwrap();
-    assert_eq!(balance, web3::types::U256::from(0));
-
-    // ensure main contract has 0 balance initially
-    let balance = event_loop
-        .run(main_eth.balance(main_contract_address.into(), None))
-        .unwrap();
-    assert_eq!(balance, web3::types::U256::from(0));
-
-    println!("\nuser deposits ether into MainBridge\n");
+    println!("\nconfirmed that deposit reached side\n");
 
     event_loop
         .run(web3::confirm::send_transaction_with_confirmation(

@@ -1,5 +1,5 @@
 [package]
-name = "integration-tests"
+name = "integration_tests"
 version = "0.1.0"
 authors = ["debris <marek.kotewicz@gmail.com>", "snd <kruemaxi@gmail.com>"]
 
@@ -15,3 +15,5 @@ tempdir = "0.3.5"
 ethereum-types = "0.4"
 tokio-core = "0.1.8"
 ethabi = "6.0"
+ethabi-derive = "6.0"
+ethabi-contract = "6.0"

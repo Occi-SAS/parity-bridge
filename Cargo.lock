@@ -449,12 +449,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "integration-tests"
+name = "integration_tests"
 version = "0.1.0"
 dependencies = [
  "bridge 0.5.0",
  "bridge-contracts 0.5.0",
  "ethabi 6.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ethabi-contract 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ethabi-derive 6.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "ethereum-types 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.25 (registry+https://github.com/rust-lang/crates.io-index)",
  "jsonrpc-core 8.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
