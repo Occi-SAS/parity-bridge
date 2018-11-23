@@ -142,6 +142,11 @@ where
     serializer.serialize_str(&format!("{}", value))
 }
 
+pub fn default_u256() -> U256 {
+    U256::from(0)
+}
+
+
 /// extends the `Stream` trait by the `last` function
 pub trait StreamExt<I> {
     /// if you're interested only in the last item in a stream
