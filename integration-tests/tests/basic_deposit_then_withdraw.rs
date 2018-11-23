@@ -28,7 +28,6 @@ extern crate tokio_core;
 extern crate web3;
 
 use std::fs;
-use std::io::Read;
 use std::path::Path;
 use std::process::Command;
 use std::thread;
@@ -145,11 +144,11 @@ fn test_basic_deposit_then_withdraw() {
     // A address containing a lot of tokens (0x00a329c0648769a73afac7f9381e08fb43dbea72) should be
     // automatically added with a password being an empty string.
     // source: https://paritytech.github.io/wiki/Private-development-chain.html
-    let user_address = "0x00a329c0648769a73afac7f9381e08fb43dbea72";
+    let authority_address = "0x00a329c0648769a73afac7f9381e08fb43dbea72";
 
     let receiver_address = "0x05b344a728ebb2219459a008271264aef16adbc1";
 
-    let authority_address = "0x00bd138abd70e2f00903268f3db08f2d25677c9e";
+    let user_address = "0x00bd138abd70e2f00903268f3db08f2d25677c9e";
 
     // create authority account on main
     // this is currently not supported in web3 crate so we have to use curl
@@ -292,7 +291,7 @@ fn test_basic_deposit_then_withdraw() {
     let main_contract_address = "0xebd3944af37ccc6b67ff61239ac4fef229c8f69f";
     let side_contract_address = "0xebd3944af37ccc6b67ff61239ac4fef229c8f69f";
 
-    let (payload, decoder) = bridge_contracts::main::functions::estimated_gas_cost_of_withdraw::call();
+    let (payload, decoder) = bridge_contracts::main::functions::token::call();
     let response = event_loop
         .run(AsyncCall::new(
             &main_transport,
@@ -305,11 +304,15 @@ fn test_basic_deposit_then_withdraw() {
 
     assert_eq!(
         response,
-        U256::from(200000),
-        "estimated gas cost of withdraw must be correct"
+        Address::from(token_address),
+        "token address must be correct"
     );
 
-    println!("\ngive authority some funds to do relay later\n");
+    // Test that the deploy script correctly moved some ETH into the side bridge
+    let balance = event_loop
+        .run(side_eth.balance(side_contract_address.into(), None))
+        .unwrap();
+    assert_eq!(balance, web3::types::U256::from_dec_str("10000000000000000000").unwrap());
 
     let balance = event_loop
         .run(main_eth.balance(authority_address.into(), None))

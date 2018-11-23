@@ -2,7 +2,7 @@
 # https://github.com/paritytech/parity-bridge/#configuration
 
 # ACTION REQUIRED: set to your authority address
-address = "0x00bd138abd70e2f00903268f3db08f2d25677c9e"
+address = "0x00a329c0648769a73afac7f9381e08fb43dbea72"
 
 token = "0x1234567890181FC4006Ce572cF346e596E51818b"
 
@@ -33,7 +33,7 @@ bin = "../compiled_contracts/SideBridge.bin"
 [authorities]
 # ACTION REQUIRED: set this to the addresses of the authority list
 accounts = [
-	"0x00bd138abd70e2f00903268f3db08f2d25677c9e",
+	"0x00a329c0648769a73afac7f9381e08fb43dbea72",
 ]
 # ACTION REQUIRED: set this to a (super-)majority of `authorities.accounts`
 # example: set to 3 for 5 authorities. set to 7 for 10 authorities
@@ -50,7 +50,7 @@ main_deploy = { gas = "1000000" , gas_price = "0" }
 withdraw_relay = { gas = "200000" , gas_price = "0" }
 
 # these happen on `side`:
-side_deploy = { gas = "3000000" , gas_price = "0" }
+side_deploy = { gas = "3000000" , gas_price = "0", value = "10000000000000000000" }
 deposit_relay = { gas = "150000" , gas_price = "0" }
 
 withdraw_confirm = { gas = "300000" , gas_price = "0" }
