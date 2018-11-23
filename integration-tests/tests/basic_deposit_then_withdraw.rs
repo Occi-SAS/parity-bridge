@@ -30,7 +30,7 @@ extern crate web3;
 
 use std::fs;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Child};
 use std::thread;
 use std::time::Duration;
 
@@ -46,6 +46,23 @@ use web3::transports::http::Http;
 const TMP_PATH: &str = "tmp";
 const MAX_PARALLEL_REQUESTS: usize = 10;
 const TIMEOUT: Duration = Duration::from_secs(1);
+
+struct Process {
+    process: Child,
+}
+impl Process {
+    pub fn new(_process: Child) -> Process {
+        Process { process: _process }
+    }
+    pub fn kill(&mut self) {
+        self.process.kill().unwrap();
+    }
+}
+impl Drop for Process {
+    fn drop(&mut self) {
+        self.kill();
+    }
+}
 
 fn parity_main_command() -> Command {
     let mut command = Command::new("parity");
@@ -131,14 +148,18 @@ fn test_basic_deposit_then_withdraw() {
     );
 
     // start a parity node that represents the main chain
-    let mut parity_main = parity_main_command()
-        .spawn()
-        .expect("failed to spawn parity main node");
+    let mut parity_main = Process::new(
+        parity_main_command()
+            .spawn()
+            .expect("failed to spawn parity main node")
+        );
 
     // start a parity node that represents the side chain
-    let mut parity_side = parity_side_command()
-        .spawn()
-        .expect("failed to spawn parity side node");
+    let mut parity_side = Process::new(
+        parity_side_command()
+            .spawn()
+            .expect("failed to spawn parity side node")
+        );
 
     // give the clients time to start up
     thread::sleep(Duration::from_millis(3000));
@@ -181,29 +202,33 @@ fn test_basic_deposit_then_withdraw() {
     thread::sleep(Duration::from_millis(5000));
 
     // kill the clients so we can restart them with the accounts unlocked
-    parity_main.kill().unwrap();
-    parity_side.kill().unwrap();
+    parity_main.kill();
+    parity_side.kill();
 
     // wait for clients to shut down
     thread::sleep(Duration::from_millis(5000));
 
     // start a parity node that represents the main chain with accounts unlocked
-    let mut parity_main = parity_main_command()
-        .arg("--unlock")
-        .arg(format!("{},{}", user_address, authority_address))
-        .arg("--password")
-        .arg("password.txt")
-        .spawn()
-        .expect("failed to spawn parity main node");
+    let mut parity_main = Process::new(
+        parity_main_command()
+            .arg("--unlock")
+            .arg(format!("{},{}", user_address, authority_address))
+            .arg("--password")
+            .arg("password.txt")
+            .spawn()
+            .expect("failed to spawn parity main node")
+        );
 
     // start a parity node that represents the side chain with accounts unlocked
-    let mut parity_side = parity_side_command()
-        .arg("--unlock")
-        .arg(format!("{},{}", user_address, authority_address))
-        .arg("--password")
-        .arg("password.txt")
-        .spawn()
-        .expect("failed to spawn parity side node");
+    let mut parity_side = Process::new(
+        parity_side_command()
+            .arg("--unlock")
+            .arg(format!("{},{}", user_address, authority_address))
+            .arg("--password")
+            .arg("password.txt")
+            .spawn()
+            .expect("failed to spawn parity side node")
+        );
 
     // give nodes time to start up
     thread::sleep(Duration::from_millis(10000));
@@ -269,16 +294,18 @@ fn test_basic_deposit_then_withdraw() {
     );
 
     // start bridge authority 1
-    let mut bridge1 = Command::new("env")
-        .arg("RUST_BACKTRACE=1")
-        .arg("../target/debug/parity-bridge")
-        .env("RUST_LOG", "info")
-        .arg("--config")
-        .arg(&bridge_config_path)
-        .arg("--database")
-        .arg("tmp/bridge1_db.txt")
-        .spawn()
-        .expect("failed to spawn bridge process");
+    let mut bridge1 = Process::new(
+        Command::new("env")
+            .arg("RUST_BACKTRACE=1")
+            .arg("../target/debug/parity-bridge")
+            .env("RUST_LOG", "info")
+            .arg("--config")
+            .arg(&bridge_config_path)
+            .arg("--database")
+            .arg("tmp/bridge1_db.txt")
+            .spawn()
+            .expect("failed to spawn bridge process")
+        );
 
     let main_contract_address = "0xb4c79dab8f259c7aee6e5b2aa729821864227e84";
     let side_contract_address = "0x731a10897d267e19b34503ad902d0a29173ba4b1";
@@ -452,11 +479,11 @@ fn test_basic_deposit_then_withdraw() {
 
     println!("\nconfirmed that withdraw reached main\n");
 
-    bridge1.kill().unwrap();
+    bridge1.kill();
 
     // wait for bridge to shut down
     thread::sleep(Duration::from_millis(1000));
 
-    parity_main.kill().unwrap();
-    parity_side.kill().unwrap();
+    parity_main.kill();
+    parity_side.kill();
 }
