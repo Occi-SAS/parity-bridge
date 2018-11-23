@@ -147,6 +147,7 @@ impl Transactions {
 pub struct TransactionConfig {
     pub gas: U256,
     pub gas_price: U256,
+    pub value: U256,
 }
 
 impl TransactionConfig {
@@ -154,6 +155,7 @@ impl TransactionConfig {
         TransactionConfig {
             gas: cfg.gas,
             gas_price: cfg.gas_price,
+            value: cfg.value,
         }
     }
 }
@@ -175,6 +177,7 @@ pub struct Authorities {
 mod load {
     use ethereum_types::U256;
     use helpers::deserialize_u256;
+    use helpers::default_u256;
     use std::path::PathBuf;
     use web3::types::Address;
 
@@ -218,6 +221,9 @@ mod load {
         pub gas: U256,
         #[serde(deserialize_with = "deserialize_u256")]
         pub gas_price: U256,
+        #[serde(default="default_u256")]
+        #[serde(deserialize_with = "deserialize_u256")]
+        pub value: U256,
     }
 
     #[derive(Deserialize)]
@@ -271,7 +277,7 @@ accounts = [
 required_signatures = 2
 
 [transactions]
-main_deploy = { gas = "20", gas_price = "0" }
+main_deploy = { gas = "20", gas_price = "0", value = "1000" }
 "#;
 
         let mut expected = Config {
@@ -316,6 +322,7 @@ main_deploy = { gas = "20", gas_price = "0" }
         expected.txs.main_deploy = TransactionConfig {
             gas: 20.into(),
             gas_price: 0.into(),
+            value: 1000.into(),
         };
 
         let config = Config::load_from_str(toml).unwrap();
