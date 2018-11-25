@@ -17,6 +17,7 @@ extern crate bridge;
 extern crate bridge_contracts;
 extern crate ethabi;
 extern crate ethereum_types;
+extern crate hex;
 extern crate integration_tests;
 /// spins up two parity nodes with the dev chain.
 /// starts one bridge authority that connects the two.
@@ -42,6 +43,7 @@ use ethereum_types::{Address, U256};
 use web3::confirm;
 use web3::api::Namespace;
 use web3::transports::http::Http;
+use web3::types::Bytes;
 
 const TMP_PATH: &str = "tmp";
 const MAX_PARALLEL_REQUESTS: usize = 10;
@@ -261,7 +263,7 @@ fn test_basic_deposit_then_withdraw() {
         gas: None,
         gas_price: None,
         value: None,
-        data: Some(token_bytecode.into()),
+        data: Some(Bytes::from(hex::decode(token_bytecode).unwrap())),
         nonce: None,
         condition: None,
     };
