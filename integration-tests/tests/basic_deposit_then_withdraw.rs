@@ -271,7 +271,7 @@ fn test_basic_deposit_then_withdraw() {
     let token_address = receipt.contract_address.unwrap();
 
     let mut bridge_config = fs::read_to_string("bridge_config.toml").expect("Unable to read bridge config");
-    bridge_config = bridge_config.replace("0x1234567890181FC4006Ce572cF346e596E51818b", &token_address.hex());
+    bridge_config = bridge_config.replace("0x1234567890181FC4006Ce572cF346e596E51818b", &format!("{:#042x}", token_address));
     let bridge_config_path = format!("{}/bridge_config.toml", TMP_PATH);
     fs::write(&bridge_config_path, &bridge_config).expect("Unable to write bridge config");
 
