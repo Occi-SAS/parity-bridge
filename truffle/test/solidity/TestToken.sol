@@ -12,13 +12,9 @@ contract TestToken {
         uint256 value
     );
 
-    mapping(address => uint256) balances;
+    mapping(address => uint256) public lastBalanceDelta;
 
     bool disabled;
-
-    constructor() {
-        balances[msg.sender] = 1000 ether;
-    }
 
     function disable() external {
         disabled = true;
@@ -30,6 +26,8 @@ contract TestToken {
     }
 
     function transfer(address to, uint256 value) external isEnabled returns (bool) {
+        lastBalanceDelta[msg.sender] = value;
+        lastBalanceDelta[to] = value;
         emit Transfer(msg.sender, to, value);
         return true;
     }

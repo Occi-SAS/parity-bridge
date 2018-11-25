@@ -171,8 +171,6 @@ fn test_basic_deposit_then_withdraw() {
     // source: https://paritytech.github.io/wiki/Private-development-chain.html
     let authority_address = "0x00a329c0648769a73afac7f9381e08fb43dbea72";
 
-    let receiver_address = "0x05b344a728ebb2219459a008271264aef16adbc1";
-
     let user_address = "0x00bd138abd70e2f00903268f3db08f2d25677c9e";
 
     // create authority account on main
@@ -244,7 +242,6 @@ fn test_basic_deposit_then_withdraw() {
         &event_loop.handle(),
         MAX_PARALLEL_REQUESTS,
     ).expect("failed to connect to main at http://localhost:8550");
-    let main_eth = web3::api::Eth::new(main_transport.clone());
 
     // connect to side
     let side_transport = Http::with_event_loop(
@@ -337,7 +334,7 @@ fn test_basic_deposit_then_withdraw() {
 
     // ensure receiver has 0 balance initially
     let balance = event_loop
-        .run(side_eth.balance(receiver_address.into(), None))
+        .run(side_eth.balance(user_address.into(), None))
         .unwrap();
     assert_eq!(balance, web3::types::U256::from(0));
 
@@ -345,7 +342,7 @@ fn test_basic_deposit_then_withdraw() {
 
     let deposit_payload = test_token::functions::call_deposit::encode_input(
         Address::from(main_contract_address),
-        Address::from(receiver_address),
+        Address::from(user_address),
         U256::from(1000000000),
     );
     event_loop
@@ -370,21 +367,23 @@ fn test_basic_deposit_then_withdraw() {
     thread::sleep(Duration::from_millis(10000));
 
     let balance = event_loop
-        .run(side_eth.balance(receiver_address.into(), None))
+        .run(side_eth.balance(user_address.into(), None))
         .unwrap();
     assert_eq!(balance, web3::types::U256::from(1000000000));
 
     println!("\nconfirmed that deposit reached side\n");
 
+    println!("\nuser sends side ETH to side bridge\n");
+
     event_loop
         .run(web3::confirm::send_transaction_with_confirmation(
-            &main_transport,
+            &side_transport,
             web3::types::TransactionRequest {
                 from: user_address.into(),
-                to: Some(main_contract_address.into()),
+                to: Some(side_contract_address.into()),
                 gas: None,
                 gas_price: None,
-                value: Some(1000000000.into()),
+                value: Some(U256::from(500000000)),
                 data: None,
                 condition: None,
                 nonce: None,
@@ -394,90 +393,44 @@ fn test_basic_deposit_then_withdraw() {
         ))
         .unwrap();
 
-    // ensure main contract balance has increased
-    let balance = event_loop
-        .run(main_eth.balance(main_contract_address.into(), None))
-        .unwrap();
-    assert_eq!(balance, web3::types::U256::from(1000000000));
-
-    println!("\ndeposit into main complete. give it plenty of time to get mined and relayed\n");
-    thread::sleep(Duration::from_millis(10000));
-
-    let (payload, decoder) = bridge_contracts::side::functions::total_supply::call();
-    let response = event_loop
-        .run(AsyncCall::new(
-            &side_transport,
-            side_contract_address.into(),
-            TIMEOUT,
-            payload,
-            decoder,
-        ))
-        .unwrap();
-
-    assert_eq!(
-        response,
-        U256::from(1000000000),
-        "totalSupply on SideBridge should have increased"
-    );
-
-    let (payload, decoder) = bridge_contracts::side::functions::balance_of::call(Address::from(user_address));
-    let response = event_loop
-        .run(AsyncCall::new(
-            &side_transport,
-            side_contract_address.into(),
-            TIMEOUT,
-            payload,
-            decoder,
-        ))
-        .unwrap();
-
-    assert_eq!(
-        response,
-        U256::from(1000000000),
-        "balance on SideBridge should have increased"
-    );
-
-    println!("\nconfirmed that deposit reached side\n");
-
-    println!("\nuser executes SideBridge.transferToMainViaRelay\n");
-    let transfer_payload = bridge_contracts::side::functions::transfer_to_main_via_relay::encode_input(
-        Address::from(receiver_address),
-        U256::from(1000000000),
-        U256::from(1000),
-    );
-    event_loop
-        .run(web3::confirm::send_transaction_with_confirmation(
-            &side_transport,
-            web3::types::TransactionRequest {
-                from: user_address.into(),
-                to: Some(side_contract_address.into()),
-                gas: None,
-                gas_price: None,
-                value: None,
-                data: Some(web3::types::Bytes(transfer_payload)),
-                condition: None,
-                nonce: None,
-            },
-            Duration::from_secs(1),
-            0,
-        ))
-        .unwrap();
-
-    println!("\nSideBridge.transferToMainViaRelay transaction sent. give it plenty of time to get mined and relayed\n");
+    println!("\nSideBridge withdraw transaction sent. give it plenty of time to get mined and relayed\n");
     thread::sleep(Duration::from_millis(10000));
 
     // test that withdraw completed
-    let balance = event_loop
-        .run(main_eth.balance(receiver_address.into(), None))
+    let (payload, decoder) = test_token::functions::last_balance_delta::call(user_address);
+    let user_delta = event_loop
+        .run(AsyncCall::new(
+            &main_transport,
+            token_address.into(),
+            TIMEOUT,
+            payload,
+            decoder,
+        ))
         .unwrap();
-    println!("balance = {}", balance);
-    assert_eq!(balance, web3::types::U256::from(800000000));
 
-    // ensure main contract balance has decreased
-    let balance = event_loop
-        .run(main_eth.balance(main_contract_address.into(), None))
+    assert_eq!(
+        user_delta,
+        U256::from(500000000),
+        "Tokens should have been transfered to user"
+    );
+
+    let (payload, decoder) = test_token::functions::last_balance_delta::call(user_address);
+    let bridge_delta = event_loop
+        .run(AsyncCall::new(
+            &main_transport,
+            token_address.into(),
+            TIMEOUT,
+            payload,
+            decoder,
+        ))
         .unwrap();
-    assert_eq!(balance, web3::types::U256::from(0));
+
+    assert_eq!(
+        bridge_delta,
+        U256::from(500000000),
+        "Tokens should have been transfered to user"
+    );
+
 
     println!("\nconfirmed that withdraw reached main\n");
 
