@@ -17,6 +17,8 @@ extern crate bridge;
 extern crate bridge_contracts;
 extern crate ethabi;
 extern crate ethereum_types;
+extern crate hex;
+extern crate integration_tests;
 /// spins up two parity nodes with the dev chain.
 /// starts one bridge authority that connects the two.
 /// does a deposit by sending ether to the MainBridge.
@@ -27,21 +29,42 @@ extern crate tempdir;
 extern crate tokio_core;
 extern crate web3;
 
+use std::fs;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Child};
 use std::thread;
 use std::time::Duration;
 
+use integration_tests::test_token;
 use tokio_core::reactor::Core;
 
 use bridge::helpers::AsyncCall;
 use ethereum_types::{Address, U256};
+use web3::confirm;
 use web3::api::Namespace;
 use web3::transports::http::Http;
+use web3::types::Bytes;
 
 const TMP_PATH: &str = "tmp";
 const MAX_PARALLEL_REQUESTS: usize = 10;
 const TIMEOUT: Duration = Duration::from_secs(1);
+
+struct Process {
+    process: Child,
+}
+impl Process {
+    pub fn new(_process: Child) -> Process {
+        Process { process: _process }
+    }
+    pub fn kill(&mut self) {
+        self.process.kill().unwrap();
+    }
+}
+impl Drop for Process {
+    fn drop(&mut self) {
+        self.kill();
+    }
+}
 
 fn parity_main_command() -> Command {
     let mut command = Command::new("parity");
@@ -127,14 +150,18 @@ fn test_basic_deposit_then_withdraw() {
     );
 
     // start a parity node that represents the main chain
-    let mut parity_main = parity_main_command()
-        .spawn()
-        .expect("failed to spawn parity main node");
+    let mut parity_main = Process::new(
+        parity_main_command()
+            .spawn()
+            .expect("failed to spawn parity main node")
+        );
 
     // start a parity node that represents the side chain
-    let mut parity_side = parity_side_command()
-        .spawn()
-        .expect("failed to spawn parity side node");
+    let mut parity_side = Process::new(
+        parity_side_command()
+            .spawn()
+            .expect("failed to spawn parity side node")
+        );
 
     // give the clients time to start up
     thread::sleep(Duration::from_millis(3000));
@@ -142,11 +169,9 @@ fn test_basic_deposit_then_withdraw() {
     // A address containing a lot of tokens (0x00a329c0648769a73afac7f9381e08fb43dbea72) should be
     // automatically added with a password being an empty string.
     // source: https://paritytech.github.io/wiki/Private-development-chain.html
-    let user_address = "0x00a329c0648769a73afac7f9381e08fb43dbea72";
+    let authority_address = "0x00a329c0648769a73afac7f9381e08fb43dbea72";
 
-    let receiver_address = "0x05b344a728ebb2219459a008271264aef16adbc1";
-
-    let authority_address = "0x00bd138abd70e2f00903268f3db08f2d25677c9e";
+    let user_address = "0x00bd138abd70e2f00903268f3db08f2d25677c9e";
 
     // create authority account on main
     // this is currently not supported in web3 crate so we have to use curl
@@ -177,32 +202,78 @@ fn test_basic_deposit_then_withdraw() {
     thread::sleep(Duration::from_millis(5000));
 
     // kill the clients so we can restart them with the accounts unlocked
-    parity_main.kill().unwrap();
-    parity_side.kill().unwrap();
+    parity_main.kill();
+    parity_side.kill();
 
     // wait for clients to shut down
     thread::sleep(Duration::from_millis(5000));
 
     // start a parity node that represents the main chain with accounts unlocked
-    let mut parity_main = parity_main_command()
-        .arg("--unlock")
-        .arg(format!("{},{}", user_address, authority_address))
-        .arg("--password")
-        .arg("password.txt")
-        .spawn()
-        .expect("failed to spawn parity main node");
+    let mut parity_main = Process::new(
+        parity_main_command()
+            .arg("--unlock")
+            .arg(format!("{},{}", user_address, authority_address))
+            .arg("--password")
+            .arg("password.txt")
+            .spawn()
+            .expect("failed to spawn parity main node")
+        );
 
     // start a parity node that represents the side chain with accounts unlocked
-    let mut parity_side = parity_side_command()
-        .arg("--unlock")
-        .arg(format!("{},{}", user_address, authority_address))
-        .arg("--password")
-        .arg("password.txt")
-        .spawn()
-        .expect("failed to spawn parity side node");
+    let mut parity_side = Process::new(
+        parity_side_command()
+            .arg("--unlock")
+            .arg(format!("{},{}", user_address, authority_address))
+            .arg("--password")
+            .arg("password.txt")
+            .spawn()
+            .expect("failed to spawn parity side node")
+        );
 
     // give nodes time to start up
     thread::sleep(Duration::from_millis(10000));
+
+
+    let mut event_loop = Core::new().unwrap();
+
+    // connect to main
+    let main_transport = Http::with_event_loop(
+        "http://localhost:8550",
+        &event_loop.handle(),
+        MAX_PARALLEL_REQUESTS,
+    ).expect("failed to connect to main at http://localhost:8550");
+
+    // connect to side
+    let side_transport = Http::with_event_loop(
+        "http://localhost:8551",
+        &event_loop.handle(),
+        MAX_PARALLEL_REQUESTS,
+    ).expect("failed to connect to side at http://localhost:8551");
+    let side_eth = web3::api::Eth::new(side_transport.clone());
+
+    let token_bytecode = fs::read_to_string("../compiled_contracts/TestToken.bin")
+        .expect("Unable to read token bytecode");
+
+    let tx = web3::types::TransactionRequest {
+        from: authority_address.into(),
+        to: None,
+        gas: None,
+        gas_price: None,
+        value: None,
+        data: Some(Bytes::from(hex::decode(token_bytecode).unwrap())),
+        nonce: None,
+        condition: None,
+    };
+    let receipt = event_loop
+        .run(confirm::send_transaction_with_confirmation(&main_transport, tx, Duration::new(0, 100), 0))
+        .unwrap();
+    println!("Address {:?}", receipt.contract_address);
+    let token_address = receipt.contract_address.unwrap();
+
+    let mut bridge_config = fs::read_to_string("bridge_config.toml").expect("Unable to read bridge config");
+    bridge_config = bridge_config.replace("0x1234567890181FC4006Ce572cF346e596E51818b", &format!("{:#042x}", token_address));
+    let bridge_config_path = format!("{}/bridge_config.toml", TMP_PATH);
+    fs::write(&bridge_config_path, &bridge_config).expect("Unable to write bridge config");
 
     // deploy bridge contracts
 
@@ -213,7 +284,7 @@ fn test_basic_deposit_then_withdraw() {
             .arg("../target/debug/parity-bridge-deploy")
             .env("RUST_LOG", "info")
             .arg("--config")
-            .arg("bridge_config.toml")
+            .arg(&bridge_config_path)
             .arg("--database")
             .arg("tmp/bridge1_db.txt")
             .status()
@@ -222,38 +293,23 @@ fn test_basic_deposit_then_withdraw() {
     );
 
     // start bridge authority 1
-    let mut bridge1 = Command::new("env")
-        .arg("RUST_BACKTRACE=1")
-        .arg("../target/debug/parity-bridge")
-        .env("RUST_LOG", "info")
-        .arg("--config")
-        .arg("bridge_config.toml")
-        .arg("--database")
-        .arg("tmp/bridge1_db.txt")
-        .spawn()
-        .expect("failed to spawn bridge process");
+    let mut bridge1 = Process::new(
+        Command::new("env")
+            .arg("RUST_BACKTRACE=1")
+            .arg("../target/debug/parity-bridge")
+            .env("RUST_LOG", "info")
+            .arg("--config")
+            .arg(&bridge_config_path)
+            .arg("--database")
+            .arg("tmp/bridge1_db.txt")
+            .spawn()
+            .expect("failed to spawn bridge process")
+        );
 
-    let main_contract_address = "0xebd3944af37ccc6b67ff61239ac4fef229c8f69f";
-    let side_contract_address = "0xebd3944af37ccc6b67ff61239ac4fef229c8f69f";
+    let main_contract_address = "0xb4c79dab8f259c7aee6e5b2aa729821864227e84";
+    let side_contract_address = "0x731a10897d267e19b34503ad902d0a29173ba4b1";
 
-    let mut event_loop = Core::new().unwrap();
-
-    // connect to main
-    let main_transport = Http::with_event_loop(
-        "http://localhost:8550",
-        &event_loop.handle(),
-        MAX_PARALLEL_REQUESTS,
-    ).expect("failed to connect to main at http://localhost:8550");
-    let main_eth = web3::api::Eth::new(main_transport.clone());
-
-    // connect to side
-    let side_transport = Http::with_event_loop(
-        "http://localhost:8551",
-        &event_loop.handle(),
-        MAX_PARALLEL_REQUESTS,
-    ).expect("failed to connect to side at http://localhost:8551");
-
-    let (payload, decoder) = bridge_contracts::main::functions::estimated_gas_cost_of_withdraw::call();
+    let (payload, decoder) = bridge_contracts::main::functions::token::call();
     let response = event_loop
         .run(AsyncCall::new(
             &main_transport,
@@ -266,62 +322,39 @@ fn test_basic_deposit_then_withdraw() {
 
     assert_eq!(
         response,
-        U256::from(200000),
-        "estimated gas cost of withdraw must be correct"
+        Address::from(token_address),
+        "token address must be correct"
     );
 
-    println!("\ngive authority some funds to do relay later\n");
-
+    // Test that the deploy script correctly moved some ETH into the side bridge
     let balance = event_loop
-        .run(main_eth.balance(authority_address.into(), None))
+        .run(side_eth.balance(side_contract_address.into(), None))
         .unwrap();
-    assert_eq!(balance, web3::types::U256::from(0));
-    event_loop
-        .run(web3::confirm::send_transaction_with_confirmation(
-            &main_transport,
-            web3::types::TransactionRequest {
-                from: user_address.into(),
-                to: Some(authority_address.into()),
-                gas: None,
-                gas_price: None,
-                value: Some(1000000000.into()),
-                data: None,
-                condition: None,
-                nonce: None,
-            },
-            Duration::from_secs(1),
-            0,
-        ))
-        .unwrap();
-    let balance = event_loop
-        .run(main_eth.balance(authority_address.into(), None))
-        .unwrap();
-    assert_eq!(balance, web3::types::U256::from(1000000000));
+    assert_eq!(balance, web3::types::U256::from_dec_str("10000000000000000000").unwrap());
 
     // ensure receiver has 0 balance initially
     let balance = event_loop
-        .run(main_eth.balance(receiver_address.into(), None))
+        .run(side_eth.balance(user_address.into(), None))
         .unwrap();
     assert_eq!(balance, web3::types::U256::from(0));
 
-    // ensure main contract has 0 balance initially
-    let balance = event_loop
-        .run(main_eth.balance(main_contract_address.into(), None))
-        .unwrap();
-    assert_eq!(balance, web3::types::U256::from(0));
+    println!("\nuser deposits Token into MainBridge\n");
 
-    println!("\nuser deposits ether into MainBridge\n");
-
+    let deposit_payload = test_token::functions::call_deposit::encode_input(
+        Address::from(main_contract_address),
+        Address::from(user_address),
+        U256::from(1000000000),
+    );
     event_loop
         .run(web3::confirm::send_transaction_with_confirmation(
             &main_transport,
             web3::types::TransactionRequest {
                 from: user_address.into(),
-                to: Some(main_contract_address.into()),
+                to: Some(token_address.into()),
                 gas: None,
                 gas_price: None,
-                value: Some(1000000000.into()),
-                data: None,
+                value: None,
+                data: Some(web3::types::Bytes(deposit_payload)),
                 condition: None,
                 nonce: None,
             },
@@ -329,58 +362,19 @@ fn test_basic_deposit_then_withdraw() {
             0,
         ))
         .unwrap();
-
-    // ensure main contract balance has increased
-    let balance = event_loop
-        .run(main_eth.balance(main_contract_address.into(), None))
-        .unwrap();
-    assert_eq!(balance, web3::types::U256::from(1000000000));
 
     println!("\ndeposit into main complete. give it plenty of time to get mined and relayed\n");
     thread::sleep(Duration::from_millis(10000));
 
-    let (payload, decoder) = bridge_contracts::side::functions::total_supply::call();
-    let response = event_loop
-        .run(AsyncCall::new(
-            &side_transport,
-            side_contract_address.into(),
-            TIMEOUT,
-            payload,
-            decoder,
-        ))
+    let balance = event_loop
+        .run(side_eth.balance(user_address.into(), None))
         .unwrap();
-
-    assert_eq!(
-        response,
-        U256::from(1000000000),
-        "totalSupply on SideBridge should have increased"
-    );
-
-    let (payload, decoder) = bridge_contracts::side::functions::balance_of::call(Address::from(user_address));
-    let response = event_loop
-        .run(AsyncCall::new(
-            &side_transport,
-            side_contract_address.into(),
-            TIMEOUT,
-            payload,
-            decoder,
-        ))
-        .unwrap();
-
-    assert_eq!(
-        response,
-        U256::from(1000000000),
-        "balance on SideBridge should have increased"
-    );
+    assert_eq!(balance, web3::types::U256::from(1000000000));
 
     println!("\nconfirmed that deposit reached side\n");
 
-    println!("\nuser executes SideBridge.transferToMainViaRelay\n");
-    let transfer_payload = bridge_contracts::side::functions::transfer_to_main_via_relay::encode_input(
-        Address::from(receiver_address),
-        U256::from(1000000000),
-        U256::from(1000),
-    );
+    println!("\nuser sends side ETH to side bridge\n");
+
     event_loop
         .run(web3::confirm::send_transaction_with_confirmation(
             &side_transport,
@@ -389,8 +383,8 @@ fn test_basic_deposit_then_withdraw() {
                 to: Some(side_contract_address.into()),
                 gas: None,
                 gas_price: None,
-                value: None,
-                data: Some(web3::types::Bytes(transfer_payload)),
+                value: Some(U256::from(500000000)),
+                data: None,
                 condition: None,
                 nonce: None,
             },
@@ -399,29 +393,52 @@ fn test_basic_deposit_then_withdraw() {
         ))
         .unwrap();
 
-    println!("\nSideBridge.transferToMainViaRelay transaction sent. give it plenty of time to get mined and relayed\n");
+    println!("\nSideBridge withdraw transaction sent. give it plenty of time to get mined and relayed\n");
     thread::sleep(Duration::from_millis(10000));
 
     // test that withdraw completed
-    let balance = event_loop
-        .run(main_eth.balance(receiver_address.into(), None))
+    let (payload, decoder) = test_token::functions::last_balance_delta::call(user_address);
+    let user_delta = event_loop
+        .run(AsyncCall::new(
+            &main_transport,
+            token_address.into(),
+            TIMEOUT,
+            payload,
+            decoder,
+        ))
         .unwrap();
-    println!("balance = {}", balance);
-    assert_eq!(balance, web3::types::U256::from(800000000));
 
-    // ensure main contract balance has decreased
-    let balance = event_loop
-        .run(main_eth.balance(main_contract_address.into(), None))
+    assert_eq!(
+        user_delta,
+        U256::from(500000000),
+        "Tokens should have been transfered to user"
+    );
+
+    let (payload, decoder) = test_token::functions::last_balance_delta::call(user_address);
+    let bridge_delta = event_loop
+        .run(AsyncCall::new(
+            &main_transport,
+            token_address.into(),
+            TIMEOUT,
+            payload,
+            decoder,
+        ))
         .unwrap();
-    assert_eq!(balance, web3::types::U256::from(0));
+
+    assert_eq!(
+        bridge_delta,
+        U256::from(500000000),
+        "Tokens should have been transfered to user"
+    );
+
 
     println!("\nconfirmed that withdraw reached main\n");
 
-    bridge1.kill().unwrap();
+    bridge1.kill();
 
     // wait for bridge to shut down
     thread::sleep(Duration::from_millis(1000));
 
-    parity_main.kill().unwrap();
-    parity_side.kill().unwrap();
+    parity_main.kill();
+    parity_side.kill();
 }
