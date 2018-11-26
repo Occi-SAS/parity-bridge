@@ -1,0 +1,3 @@
+FROM bridge
+
+CMD ["./target/release/parity-bridge-deploy", "--config", "/opt/bridge/config.toml", "--database", "deployment/db.toml"]
