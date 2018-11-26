@@ -6,8 +6,8 @@ const contract = require('truffle-contract');
 const HDWalletProvider = require('truffle-hdwallet-provider');
 const Web3 = require('web3');
 
-const ForeignBridge = contract(require('../build/contracts/ForeignBridge'));
-const HomeBridge = contract(require('../build/contracts/HomeBridge'));
+const MainBridge = contract(require('../build/contracts/MainBridge'));
+const SideBridge = contract(require('../build/contracts/SideBridge'));
 
 const IPC_DIR = '/opt/ipc';
 
@@ -34,22 +34,22 @@ async function getBridgeContracts() {
   const homeChainProvider = new HDWalletProvider(mnemonic, homeChainConnection);
   const foreignChainProvider = new HDWalletProvider(mnemonic, foreignChainConnection);
 
-  HomeBridge.setProvider(homeChainProvider);
-  ForeignBridge.setProvider(foreignChainProvider);
+  MainBridge.setProvider(homeChainProvider);
+  SideBridge.setProvider(foreignChainProvider);
 
   const { home_contract_address, foreign_contract_address } = getBridgeData();
 
-  const homeBridge = await HomeBridge.at(home_contract_address);
-  const foreignBridge = await ForeignBridge.at(foreign_contract_address);
+  const mainBridge = await MainBridge.at(home_contract_address);
+  const sideBridge = await SideBridge.at(foreign_contract_address);
 
-  const homeAuthorityCount = await homeBridge.numAuthorities();
+  const homeAuthorityCount = await mainBridge.numAuthorities();
   console.log(`Found home bridge at ${home_contract_address} with ${homeAuthorityCount} authorities`);
-  const foreignAuthorityCount = await foreignBridge.numAuthorities();
+  const foreignAuthorityCount = await sideBridge.numAuthorities();
   console.log(`Found foreign bridge at ${foreign_contract_address} with ${foreignAuthorityCount} authorities`);
 
   const address = homeChainProvider.getAddress();
 
-  return { homeBridge, foreignBridge, address, homeChainConnection, foreignChainConnection };
+  return { mainBridge, sideBridge, address, homeChainConnection, foreignChainConnection };
 }
 
 module.exports = getBridgeContracts;
